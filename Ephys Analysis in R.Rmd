@@ -1,0 +1,147 @@
+---
+title: "Ephys Analysis"
+author: "Michael Young"
+date: "September 14, 2016"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Functions required for analysis
+
+```{r}
+library("ggplot2")
+library("nls2")
+
+##function to normalize data
+normalize=function(resp){
+  norm_resp=resp/max(resp)
+  return(norm_resp)
+}
+
+##function to produce boltzmann fit to normalized conductance data. It begins by sweeping a
+##grid using brute force for rough estimates of s50 and ds parameters that are then used as 
+##starting points for non-linear regression analysis.
+boltz_fit=function(stim,resp){
+  st1<-expand.grid(s50=seq(-100,100,10),ds=seq(-100,100,5))
+  roughmodel<-nls2(resp~1/(1+exp((s50-stim)/ds)),start=st1,
+                   algorithm="brute-force")
+  guesses<-coef(roughmodel)
+  fitmodel<-nls(resp~1/(1+exp((s50-stim)/ds)),
+                 start=list(s50=guesses[1],ds=guesses[2]))
+  params<-coef(fitmodel)
+  return(params)
+}
+```
+
+
+## Ex. with whole-cell recording data on TRPV1
+
+
+```{r}
+##whole-cell analysis calculates g from I and V 
+voltage<-seq(-100,140,20)
+current<-c(-103.759,-66.497,-49.624,-31.579,-18.045,0,36.090,135.338,302.255,537.11,884.254,1249.751,1520.296)
+conductance<-current/voltage
+cond_nona<- conductance[!is.nan(conductance)]
+norm_cond<-normalize(cond_nona)
+volt_cond<-voltage[voltage!=0]
+params<-boltz_fit(volt_cond,norm_cond)
+```
+
+
+
+Plot whole-cell IV
+
+```{r, echo=FALSE}
+##plot IV curve
+ggplot() +
+  geom_point(aes(x=voltage,y=current), color="blue", shape=1, size=3) +
+  geom_hline(yintercept=0,lty="dashed",color="red") +
+  ylab("Current (pA)") +
+  xlab("Voltage (mV)") +
+  ggtitle("IV Plot for TRPV1") +
+  theme(panel.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        axis.line.x=element_line(color="black"),
+        axis.line.y=element_line(color="black"))
+```
+
+Plot normalized GV
+
+```{r, echo=FALSE}
+##plot GV Curve
+ggplot() +
+  geom_point(aes(x=volt_cond,y=norm_cond), color="blue", shape=1, size=3) +
+  geom_line(aes(x=seq(-100,140,1),y=1/(1+exp((params[1]-seq(-100,140,1))/params[2])),
+                color="red")) +
+  ylab(expression('G/G'['max'])) +
+  xlab("Voltage (mV)") +
+  annotate("text",x=-80,y=0.8,label=paste('V0.5 =',round(params[1],digits=4)))+
+  ggtitle("GV Plot for TRPV1") +
+  theme(panel.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        legend.position="none",
+        axis.line.x=element_line(color="black"),
+        axis.line.y=element_line(color="black"))
+```
+
+##Ex. to solve for unitary conductance of TRPV1
+
+```{r}
+voltage=seq(-100,200,20)
+current=c(-5.182,-5.182,-2.239,-2.961,0,0,0,2.221,3.701,5.182,8.883,10.363,14.084,15.545,21.48,16.285)
+lin_reg=lm(current~voltage)
+```
+
+IV plot for unitary conductance
+
+
+
+```{r, echo=FALSE}
+ggplot() +
+  geom_point(aes(x=voltage,y=current), color="blue", shape=1, size=3) +
+  geom_hline(yintercept=0,lty="dashed",color="red") +
+  ylab("Current (pA)") +
+  xlab("Voltage (mV)") +
+  geom_line(aes(x=seq(-100,200,1),y=0.08468*seq(-100,200,1)+0.90235),color="black") +
+  annotate("text",x=-80,y=20,label=paste('g=',round(coef(lin_reg)[2]*1000,digits=4),"pS"))+
+  ggtitle("IV Plot for TRPV1") +
+  theme(panel.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        axis.line.x=element_line(color="black"),
+        axis.line.y=element_line(color="black"))
+```
+
+
+##Ex. Pressure response curve of Piezo channels
+
+```{r}
+##pressure response of piezo analysis
+pressure=seq(0,-90,-10)
+current=c(0,0,0,4.397,18.05,26.108,34.642,29.513,26.343,33.174)
+norm_curr=normalize(current)
+params<-boltz_fit(pressure,norm_curr)
+```
+
+Plot normalized pressure response curve
+
+```{r, echo=FALSE}
+##plot normalized pressure-response curve
+ggplot() +
+  geom_point(aes(x=pressure,y=norm_curr), color="blue", shape=1, size=3) +
+  geom_line(aes(x=seq(0,-90,-1),y=1/(1+exp((params[1]-seq(0,-90,-1))/params[2])),
+                color="red")) +
+  ylab(expression('I/I'['max'])) +
+  xlab("Pressure (mm Hg)") +
+  scale_x_reverse() +
+  annotate("text",x=-10,y=0.8,label=paste('P0.5 =',round(params[1],digits=4)))+
+  ggtitle("Normalized IV for Piezo") +
+  theme(panel.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        legend.position="none",
+        axis.line.x=element_line(color="black"),
+        axis.line.y=element_line(color="black"))
+```
